@@ -28,7 +28,12 @@ fn main() -> Result<()> {
 }
 
 struct DbInfo {
-    db_page_size: u16,
+    /// Database page size in bytes.
+    /// Must be a power of two between 512 and 32768 inclusive, or 65536.
+    /// Note that in the actual SQlite database format, the page size is
+    /// stored as a 2 byte integer, where the value 1 represents a page
+    /// size of 65536.
+    db_page_size: u32,
     num_tables: u16,
 }
 
@@ -37,8 +42,18 @@ fn dot_dbinfo(db_file: impl AsRef<Path>) -> Result<DbInfo> {
     let mut header = [0; 100];
     file.read_exact(&mut header)?;
 
-    // The page size is stored at the 16th byte offset, using 2 bytes in big-endian order
-    let db_page_size = u16::from_be_bytes([header[16], header[17]]);
+    // Refer to: https://www.sqlite.org/fileformat.html#database_header
+    let db_page_size: u32 = {
+        // The page size is stored at the 16th byte offset, using 2 bytes in big-endian order
+        let size = u16::from_be_bytes([header[16], header[17]]);
+        if size == 1 {
+            65536
+        } else {
+            assert!((512..=32768).contains(&size));
+            assert!(size.is_power_of_two());
+            size.into()
+        }
+    };
 
     // The b-tree page header is 8 bytes for leaf pages,
     // and 12 bytes for interior pages.
