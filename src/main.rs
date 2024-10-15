@@ -57,3 +57,26 @@ fn dot_dbinfo(db_file: impl AsRef<Path>) -> Result<DbInfo> {
 
     Ok(db_info)
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::dot_dbinfo;
+
+    #[test]
+    fn dbinfo_outputs_correct_page_size() {
+        let test_db_file = "sample.db";
+
+        let db_info = dot_dbinfo(test_db_file).unwrap();
+
+        assert_eq!(db_info.db_page_size, 4096);
+    }
+
+    #[test]
+    fn dbinfo_outputs_correct_num_tables() {
+        let test_db_file = "sample.db";
+
+        let db_info = dot_dbinfo(test_db_file).unwrap();
+
+        assert_eq!(db_info.num_tables, 3);
+    }
+}
