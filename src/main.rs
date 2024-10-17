@@ -84,19 +84,27 @@ mod tests {
 
     #[test]
     fn dbinfo_outputs_correct_page_size() {
-        let test_db_file = "sample.db";
+        let test_db_files = vec![
+            ("sample.db", 4096),
+        ];
 
-        let db_info = dot_dbinfo(test_db_file).unwrap();
+        for (db, expected) in test_db_files {
+            let db_info = dot_dbinfo(db).unwrap();
 
-        assert_eq!(db_info.db_page_size, 4096);
+            assert_eq!(db_info.db_page_size, expected, "{db}");
+        }
     }
 
     #[test]
     fn dbinfo_outputs_correct_num_tables() {
-        let test_db_file = "sample.db";
+        let test_db_files = vec![
+            ("sample.db", 3),
+        ];
 
-        let db_info = dot_dbinfo(test_db_file).unwrap();
+        for (db, expected) in test_db_files {
+            let db_info = dot_dbinfo(db).unwrap();
 
-        assert_eq!(db_info.num_tables, 3);
+            assert_eq!(db_info.num_tables, expected, "{db}");
+        }
     }
 }
