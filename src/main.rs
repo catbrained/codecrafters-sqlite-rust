@@ -178,7 +178,7 @@ fn dot_tables(db_file: impl AsRef<Path>) -> Result<String> {
 
 #[cfg(test)]
 mod tests {
-    use crate::dot_dbinfo;
+    use crate::*;
 
     #[test]
     fn dbinfo_outputs_correct_page_size() {
@@ -203,6 +203,19 @@ mod tests {
             let db_info = dot_dbinfo(db).unwrap();
 
             assert_eq!(db_info.num_tables, expected, "{db}");
+        }
+    }
+
+    #[test]
+    fn tables_outputs_correct_table_names() {
+        let test_db_files = vec![
+            ("sample.db", "apples oranges"),
+        ];
+
+        for (db, expected) in test_db_files {
+            let tables = dot_tables(db).unwrap();
+
+            assert_eq!(tables, expected, "{db}");
         }
     }
 }
