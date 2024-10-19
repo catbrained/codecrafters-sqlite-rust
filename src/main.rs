@@ -4,6 +4,11 @@ use std::io::prelude::*;
 use std::os::unix::fs::FileExt;
 use std::path::Path;
 
+use btree_page::*;
+
+mod btree_page;
+mod varint;
+
 fn main() -> Result<()> {
     // Parse arguments
     let args = std::env::args().collect::<Vec<_>>();
@@ -42,40 +47,63 @@ fn dot_dbinfo(db_file: impl AsRef<Path>) -> Result<DbInfo> {
     let mut header = [0; 100];
     file.read_exact(&mut header)?;
 
-    // Refer to: https://www.sqlite.org/fileformat.html#database_header
-    let db_page_size: u32 = {
-        // The page size is stored at the 16th byte offset, using 2 bytes in big-endian order
-        let size = u16::from_be_bytes([header[16], header[17]]);
-        if size == 1 {
-            65536
-        } else {
-            assert!((512..=32768).contains(&size));
-            assert!(size.is_power_of_two());
-            size.into()
+    let header = DbHeader::parse(&header)?;
+
+    let mut page = vec![0; header.page_size as usize];
+    file.read_exact_at(&mut page, 0)?;
+
+    let mut num_tables = 0;
+    let mut remaining_pages = Vec::new();
+
+    let mut btree = BTreePage::parse(&page[100..], true)?;
+
+    loop {
+        match btree.header.page_type {
+            BTreePageType::InteriorIndex => todo!(),
+            BTreePageType::InteriorTable => {
+                for cell in btree.cells {
+                    let Cell::TableInterior { left_child, .. } = cell else {
+                        bail!("Unexpected cell type");
+                    };
+                    remaining_pages.push(left_child - 1);
+                }
+                let rightmost = btree
+                    .header
+                    .right_most
+                    .expect("Right-most pointer should exist in interior page");
+                remaining_pages.push(rightmost - 1);
+            }
+            BTreePageType::LeafIndex => todo!(),
+            BTreePageType::LeafTable => {
+                for cell in btree.cells {
+                    let Cell::TableLeaf { payload, .. } = cell else {
+                        bail!("Unexpected cell type");
+                    };
+                    let RecordValue::N13AndOdd(ref s) = payload.values[0] else {
+                        bail!("Unexpected record value");
+                    };
+                    if s == "table" {
+                        num_tables += 1;
+                    }
+                }
+            }
         }
-    };
 
-    // The b-tree page header is 8 bytes for leaf pages,
-    // and 12 bytes for interior pages.
-    // TODO: This will break if we are reading a DB file that
-    //       contains more pages (i.e., when this page is _not_ a leaf page).
-    let mut b_tree_page_header = [0; 8];
-    // The b-tree page header directly follows the database header.
-    file.read_exact_at(&mut b_tree_page_header, 100)?;
-    let page_type = u8::from_be(b_tree_page_header[0]);
-    // 0x0a: leaf index b-tree page, 0x0d: leaf table b-tree page
-    // TODO: Handle other page types. In particular, we need to actually walk the
-    //       b-tree to count the number of tables. Currently we assume that there is
-    //       only this one page.
-    debug_assert!(page_type == 0x0a || page_type == 0x0d);
-    let num_tables = u16::from_be_bytes([b_tree_page_header[3], b_tree_page_header[4]]);
+        if remaining_pages.is_empty() {
+            break;
+        }
 
-    let db_info = DbInfo {
-        db_page_size,
+        let next_page = remaining_pages
+            .pop()
+            .expect("We checked that remaining pages is not empty");
+        file.read_exact_at(&mut page, next_page as u64 * header.page_size as u64)?;
+        btree = BTreePage::parse(&page[0..], false)?;
+    }
+
+    Ok(DbInfo {
+        db_page_size: header.page_size,
         num_tables,
-    };
-
-    Ok(db_info)
+    })
 }
 
 #[cfg(test)]
