@@ -26,6 +26,10 @@ fn main() -> Result<()> {
             println!("database page size: {}", db_info.db_page_size);
             println!("number of tables: {}", db_info.num_tables);
         }
+        ".tables" => {
+            let tables = dot_tables(&args[1])?;
+            println!("{tables}");
+        }
         _ => bail!("Missing or invalid command passed: {}", command),
     }
 
@@ -104,6 +108,72 @@ fn dot_dbinfo(db_file: impl AsRef<Path>) -> Result<DbInfo> {
         db_page_size: header.page_size,
         num_tables,
     })
+}
+
+fn dot_tables(db_file: impl AsRef<Path>) -> Result<String> {
+    let mut file = File::open(db_file)?;
+    let mut header = [0; 100];
+    file.read_exact(&mut header)?;
+
+    let header = DbHeader::parse(&header)?;
+
+    let mut page = vec![0; header.page_size as usize];
+    file.read_exact_at(&mut page, 0)?;
+
+    let mut tables = String::new();
+    let mut remaining_pages = Vec::new();
+
+    let mut btree = BTreePage::parse(&page[100..], true)?;
+
+    loop {
+        match btree.header.page_type {
+            BTreePageType::InteriorIndex => todo!(),
+            BTreePageType::InteriorTable => {
+                for cell in btree.cells {
+                    let Cell::TableInterior { left_child, .. } = cell else {
+                        bail!("Unexpected cell type");
+                    };
+                    remaining_pages.push(left_child - 1);
+                }
+                let rightmost = btree
+                    .header
+                    .right_most
+                    .expect("Right-most pointer should exist in interior page");
+                remaining_pages.push(rightmost - 1);
+            }
+            BTreePageType::LeafIndex => todo!(),
+            BTreePageType::LeafTable => {
+                for cell in btree.cells {
+                    let Cell::TableLeaf { payload, .. } = cell else {
+                        bail!("Unexpected cell type");
+                    };
+                    let RecordValue::N13AndOdd(ref s) = payload.values[0] else {
+                        bail!("Unexpected record value");
+                    };
+                    if s == "table" {
+                        let RecordValue::N13AndOdd(ref n) = payload.values[2] else {
+                            bail!("Unexpected record value");
+                        };
+                        if !n.starts_with("sqlite_") {
+                            tables.push_str(&format!(" {}", n));
+                        }
+                    }
+                }
+            }
+        }
+
+        if remaining_pages.is_empty() {
+            break;
+        }
+
+        let next_page = remaining_pages
+            .pop()
+            .expect("We checked that remaining pages is not empty");
+        file.read_exact_at(&mut page, next_page as u64 * header.page_size as u64)?;
+        btree = BTreePage::parse(&page[0..], false)?;
+    }
+
+    Ok(tables.trim().to_string())
 }
 
 #[cfg(test)]
