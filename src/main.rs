@@ -184,6 +184,8 @@ mod tests {
     fn dbinfo_outputs_correct_page_size() {
         let test_db_files = vec![
             ("sample.db", 4096),
+            ("superheroes.db", 4096),
+            ("companies.db", 4096),
         ];
 
         for (db, expected) in test_db_files {
@@ -197,6 +199,8 @@ mod tests {
     fn dbinfo_outputs_correct_num_tables() {
         let test_db_files = vec![
             ("sample.db", 3),
+            ("superheroes.db", 2),
+            ("companies.db", 2),
         ];
 
         for (db, expected) in test_db_files {
@@ -210,6 +214,8 @@ mod tests {
     fn tables_outputs_correct_table_names() {
         let test_db_files = vec![
             ("sample.db", "apples oranges"),
+            ("superheroes.db", "superheroes"),
+            ("companies.db", "companies"),
         ];
 
         for (db, expected) in test_db_files {
