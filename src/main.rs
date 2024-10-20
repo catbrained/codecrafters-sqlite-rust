@@ -379,4 +379,21 @@ mod tests {
             assert_eq!(tables, expected, "{db}");
         }
     }
+
+    #[test]
+    fn count_rows_outputs_correct_number_of_rows() {
+        let test_db_files = vec![
+            ("sample.db", vec![("apples", 4), ("oranges", 6)]),
+            ("superheroes.db", vec![("superheroes", 6895)]),
+            ("companies.db", vec![("companies", 55991)]),
+        ];
+
+        for (db, tables) in test_db_files {
+            for (table, expected) in tables {
+                let rows = count_rows(table, db).unwrap();
+
+                assert_eq!(rows, expected, "DB: {db}, table: {table}");
+            }
+        }
+    }
 }
