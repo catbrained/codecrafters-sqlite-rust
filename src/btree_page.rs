@@ -523,14 +523,32 @@ impl RecordValue {
                 (RecordValue::I16(val), 2)
             }
             SerialType::I24 => {
-                todo!()
+                let val = if bytes[0] < 0b1000_0000 {
+                    // Pad with zeroes.
+                    i32::from_be_bytes([0x00, bytes[0], bytes[1], bytes[2]])
+                } else {
+                    // Pad with ones.
+                    i32::from_be_bytes([0xFF, bytes[0], bytes[1], bytes[2]])
+                };
+                (RecordValue::I24(val), 3)
             }
             SerialType::I32 => {
                 let val = i32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
                 (RecordValue::I32(val), 4)
             }
             SerialType::I48 => {
-                todo!()
+                let val = if bytes[0] < 0b1000_0000 {
+                    // Pad with zeroes.
+                    i64::from_be_bytes([
+                        0x00, 0x00, bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5],
+                    ])
+                } else {
+                    // Pad with ones.
+                    i64::from_be_bytes([
+                        0xFF, 0xFF, bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5],
+                    ])
+                };
+                (RecordValue::I48(val), 6)
             }
             SerialType::I64 => {
                 let val = i64::from_be_bytes([
