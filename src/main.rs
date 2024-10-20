@@ -30,6 +30,11 @@ fn main() -> Result<()> {
             let tables = dot_tables(&args[1])?;
             println!("{tables}");
         }
+        n if n.starts_with("SELECT COUNT(*) FROM ") => {
+            let (_, table) = n.rsplit_once(' ').expect("Pattern matched whitespace");
+            let rows = count_rows(table, &args[1])?;
+            println!("{rows}");
+        }
         _ => bail!("Missing or invalid command passed: {}", command),
     }
 
@@ -174,6 +179,156 @@ fn dot_tables(db_file: impl AsRef<Path>) -> Result<String> {
     }
 
     Ok(tables.trim().to_string())
+}
+
+fn count_rows(table: &str, db_file: impl AsRef<Path>) -> Result<usize> {
+    let mut file = File::open(db_file)?;
+    let mut header = [0; 100];
+    file.read_exact(&mut header)?;
+
+    let header = DbHeader::parse(&header)?;
+
+    let mut page = vec![0; header.page_size as usize];
+    file.read_exact_at(&mut page, 0)?;
+
+    let mut remaining_pages = Vec::new();
+
+    let mut btree = BTreePage::parse(&page[100..], true)?;
+
+    let rootpage: u64;
+    'outer: loop {
+        match btree.header.page_type {
+            BTreePageType::InteriorIndex => todo!(),
+            BTreePageType::InteriorTable => {
+                for cell in btree.cells {
+                    let Cell::TableInterior { left_child, .. } = cell else {
+                        bail!("Unexpected cell type");
+                    };
+                    remaining_pages.push(left_child - 1);
+                }
+                let rightmost = btree
+                    .header
+                    .right_most
+                    .expect("Right-most pointer should exist in interior page");
+                remaining_pages.push(rightmost - 1);
+            }
+            BTreePageType::LeafIndex => todo!(),
+            BTreePageType::LeafTable => {
+                for cell in btree.cells {
+                    let Cell::TableLeaf { payload, .. } = cell else {
+                        bail!("Unexpected cell type");
+                    };
+                    let RecordValue::N13AndOdd(ref s) = payload.values[0] else {
+                        bail!("Unexpected record value");
+                    };
+                    if s == "table" {
+                        let RecordValue::N13AndOdd(ref n) = payload.values[2] else {
+                            bail!("Unexpected record value");
+                        };
+                        if n == table {
+                            // Found the entry for the table we're looking for.
+                            let serial_type = payload.serial_types[3];
+                            match serial_type {
+                                SerialType::I8 => {
+                                    let RecordValue::I8(rp) = payload.values[3] else {
+                                        panic!("We checked the SerialType");
+                                    };
+                                    rootpage = rp as u64 - 1;
+                                    break 'outer;
+                                }
+                                SerialType::I16 => {
+                                    let RecordValue::I16(rp) = payload.values[3] else {
+                                        panic!("We checked the SerialType");
+                                    };
+                                    rootpage = rp as u64 - 1;
+                                    break 'outer;
+                                }
+                                SerialType::I24 => {
+                                    let RecordValue::I24(rp) = payload.values[3] else {
+                                        panic!("We checked the SerialType");
+                                    };
+                                    rootpage = rp as u64 - 1;
+                                    break 'outer;
+                                }
+                                SerialType::I32 => {
+                                    let RecordValue::I32(rp) = payload.values[3] else {
+                                        panic!("We checked the SerialType");
+                                    };
+                                    rootpage = rp as u64 - 1;
+                                    break 'outer;
+                                }
+                                SerialType::I48 => {
+                                    let RecordValue::I48(rp) = payload.values[3] else {
+                                        panic!("We checked the SerialType");
+                                    };
+                                    rootpage = rp as u64 - 1;
+                                    break 'outer;
+                                }
+                                SerialType::I64 => {
+                                    let RecordValue::I64(rp) = payload.values[3] else {
+                                        panic!("We checked the SerialType");
+                                    };
+                                    rootpage = rp as u64 - 1;
+                                    break 'outer;
+                                }
+                                _ => bail!("Unexpected serial type for rootpage"),
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if remaining_pages.is_empty() {
+            bail!("Table not found in database");
+        }
+
+        let next_page = remaining_pages
+            .pop()
+            .expect("We checked that remaining pages is not empty");
+        file.read_exact_at(&mut page, next_page as u64 * header.page_size as u64)?;
+        btree = BTreePage::parse(&page[0..], false)?;
+    }
+
+    // Go load the rootpage of the table we're looking for.
+    file.read_exact_at(&mut page, rootpage * header.page_size as u64)?;
+
+    let mut rows = 0;
+    remaining_pages.clear();
+    loop {
+        btree = BTreePage::parse(&page[0..], false)?;
+        match btree.header.page_type {
+            BTreePageType::InteriorIndex => todo!(),
+            BTreePageType::InteriorTable => {
+                for cell in btree.cells {
+                    let Cell::TableInterior { left_child, .. } = cell else {
+                        bail!("Unexpected cell type");
+                    };
+                    remaining_pages.push(left_child - 1);
+                }
+                let rightmost = btree
+                    .header
+                    .right_most
+                    .expect("Right-most pointer should exist in interior page");
+                remaining_pages.push(rightmost - 1);
+            }
+            BTreePageType::LeafIndex => todo!(),
+            BTreePageType::LeafTable => {
+                rows += btree.header.num_cells as usize;
+            }
+        }
+
+        if remaining_pages.is_empty() {
+            break;
+        }
+
+        let next_page = remaining_pages
+            .pop()
+            .expect("We checked that remaining pages is not empty");
+        file.read_exact_at(&mut page, next_page as u64 * header.page_size as u64)?;
+    }
+
+    Ok(rows)
 }
 
 #[cfg(test)]

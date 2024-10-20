@@ -1,3 +1,4 @@
+#[derive(Copy, Clone, Debug)]
 pub struct Varint(pub i64);
 
 impl Varint {

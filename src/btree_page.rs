@@ -412,6 +412,7 @@ impl Record {
     }
 }
 
+#[derive(Copy, Clone, Debug)]
 pub enum SerialType {
     /// Value is a NULL. Content size 0.
     Null,
